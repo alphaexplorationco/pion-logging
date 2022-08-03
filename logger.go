@@ -171,14 +171,24 @@ type DefaultLoggerFactory struct {
 	Writer          io.Writer
 	DefaultLogLevel LogLevel
 	ScopeLevels     map[string]LogLevel
+
+	mu            sync.Mutex
+	scopedLoggers map[string]LeveledLogger
 }
+
+var defaultLoggerFactory = newDefaultLoggerFactory()
 
 // NewDefaultLoggerFactory creates a new DefaultLoggerFactory
 func NewDefaultLoggerFactory() *DefaultLoggerFactory {
+	return defaultLoggerFactory
+}
+
+func newDefaultLoggerFactory() *DefaultLoggerFactory {
 	factory := DefaultLoggerFactory{}
 	factory.DefaultLogLevel = LogLevelError
 	factory.ScopeLevels = make(map[string]LogLevel)
 	factory.Writer = os.Stdout
+	factory.scopedLoggers = make(map[string]LeveledLogger)
 
 	logLevels := map[string]LogLevel{
 		"DISABLE": LogLevelDisabled,
@@ -224,5 +234,13 @@ func (f *DefaultLoggerFactory) NewLogger(scope string) LeveledLogger {
 			logLevel = scopeLevel
 		}
 	}
-	return NewDefaultLeveledLoggerForScope(scope, logLevel, f.Writer)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	logger, ok := f.scopedLoggers[scope]
+	if !ok {
+		logger = NewDefaultLeveledLoggerForScope(scope, logLevel, f.Writer)
+		f.scopedLoggers[scope] = logger
+	}
+	return logger
 }
